@@ -8,7 +8,7 @@ from datetime import datetime
 from PIL import Image
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey')  # Use environment variable for security
+app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey')
 
 # Flask-Login setup
 login_manager = LoginManager()
@@ -124,7 +124,7 @@ def register():
         except Exception as e:
             continue  # Skip any errors during verification
 
-    # Hash the password provided by the user
+    # If no matching face is found, proceed with registration
     hashed_password = generate_password_hash(password)
 
     try:
