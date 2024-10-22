@@ -7,7 +7,7 @@ charset-normalizer==3.4.0
 click==8.1.7
 colorama==0.4.6
 deepface==0.0.93
-dlib==19.24.6
+dlib==19.24.0
 filelock==3.16.1
 fire==0.7.0
 Flask==3.0.3
