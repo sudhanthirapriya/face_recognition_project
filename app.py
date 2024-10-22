@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, render_template, redirect, url_for, abort
+from flask import Flask, request, jsonify, render_template, redirect, url_for
 import sqlite3
 from deepface import DeepFace
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -72,10 +72,16 @@ init_db()
 
 # Load DeepFace model once at startup
 try:
-    face_model = DeepFace.build_model('Facenet')  # Using Facenet for lower memory usage
+    face_model = DeepFace.build_model('Facenet')  # Load a lighter model (Facenet)
 except Exception as e:
     print(f"Error loading DeepFace model: {e}")
     face_model = None
+
+# Utility function to resize images before processing
+def resize_image(image_path, max_size=(500, 500)):
+    with Image.open(image_path) as img:
+        img.thumbnail(max_size)
+        img.save(image_path)
 
 # Registration Route with DeepFace check
 @app.route('/register', methods=['POST'])
@@ -93,18 +99,12 @@ def register():
         return jsonify({'status': 'danger', 'message': 'Please provide all required fields.'}), 400
 
     # Save the uploaded image
-    filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secure_filename(photo.filename)}"
+    filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{photo.filename}"
     photo_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     photo.save(photo_path)
 
     # Resize the image to reduce memory usage
-    try:
-        with Image.open(photo_path) as img:
-            img.thumbnail((500, 500))  # Resize to max 500x500
-            img.save(photo_path)
-    except Exception as e:
-        os.remove(photo_path)
-        return jsonify({'status': 'danger', 'message': 'Invalid image file.'}), 400
+    resize_image(photo_path)
 
     # Check if the face already exists in the database using DeepFace
     conn = sqlite3.connect('database.db')
@@ -179,15 +179,12 @@ def dashboard():
 @login_required
 def logout():
     logout_user()
-    return render_template('logout.html')  # Create a logout.html for better UX
+    return render_template('logout.html')
 
 # Main route for index page
 @app.route('/')
 def index():
     return render_template('index.html')
-
-# Secure filename function to prevent directory traversal attacks
-from werkzeug.utils import secure_filename
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))  # Get the PORT from the environment or default to 5000
