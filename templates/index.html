@@ -40,13 +40,11 @@
         </div>
         <div class="form-group">
             <label for="phone">Phone Number</label>
-            <input type="tel" pattern="[0-9]{10}" class="form-control" id="phone" name="phone" placeholder="Enter your 10-digit phone number" required>
-            <small class="form-text text-muted">Enter a valid 10-digit phone number.</small>
+            <input type="text" class="form-control" id="phone" name="phone" placeholder="Enter your phone number" required>
         </div>
         <div class="form-group">
             <label for="password">Password</label>
-            <input type="password" minlength="6" class="form-control" id="password" name="password" placeholder="Set a strong password (min 6 characters)" required>
-            <small class="form-text text-muted">Use at least 6 characters.</small>
+            <input type="password" class="form-control" id="password" name="password" placeholder="Set a strong password" required>
         </div>
         <div class="form-group">
             <label for="photo">Upload Your Photo</label>
@@ -63,7 +61,6 @@
     </div>
 </div>
 
-<!-- jQuery and Bootstrap JS -->
 <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
 <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
