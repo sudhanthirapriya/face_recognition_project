@@ -1,13 +1,14 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+import os
+from flask import Flask, request, jsonify, render_template, redirect, url_for, abort
 import sqlite3
 from deepface import DeepFace
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-import os
 from datetime import datetime
+from PIL import Image
 
 app = Flask(__name__)
-app.secret_key = 'supersecretkey'
+app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey')  # Use environment variable for security
 
 # Flask-Login setup
 login_manager = LoginManager()
@@ -41,6 +42,12 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB limit for uploads
+
+# Handle file size errors
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({'status': 'danger', 'message': 'File is too large. Maximum size is 5MB.'}), 413
 
 # Initialize the database with schema checking
 def init_db():
@@ -50,7 +57,7 @@ def init_db():
     # Create the users table if it doesn't exist
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  phone TEXT NOT NULL,
+                  phone TEXT NOT NULL UNIQUE,
                   password TEXT NOT NULL,
                   name TEXT NOT NULL,
                   dob TEXT NOT NULL,
@@ -63,6 +70,13 @@ def init_db():
 
 init_db()
 
+# Load DeepFace model once at startup
+try:
+    face_model = DeepFace.build_model('Facenet')  # Using Facenet for lower memory usage
+except Exception as e:
+    print(f"Error loading DeepFace model: {e}")
+    face_model = None
+
 # Registration Route with DeepFace check
 @app.route('/register', methods=['POST'])
 def register():
@@ -74,13 +88,23 @@ def register():
     password = request.form.get('password')
     photo = request.files.get('photo')
 
-    if not name or not dob or not email or not blood_group or not photo or not phone or not password:
+    # Validate all required fields
+    if not all([name, dob, email, blood_group, phone, password, photo]):
         return jsonify({'status': 'danger', 'message': 'Please provide all required fields.'}), 400
 
     # Save the uploaded image
-    filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{photo.filename}"
+    filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{secure_filename(photo.filename)}"
     photo_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     photo.save(photo_path)
+
+    # Resize the image to reduce memory usage
+    try:
+        with Image.open(photo_path) as img:
+            img.thumbnail((500, 500))  # Resize to max 500x500
+            img.save(photo_path)
+    except Exception as e:
+        os.remove(photo_path)
+        return jsonify({'status': 'danger', 'message': 'Invalid image file.'}), 400
 
     # Check if the face already exists in the database using DeepFace
     conn = sqlite3.connect('database.db')
@@ -91,24 +115,32 @@ def register():
     for row in rows:
         existing_user_id, existing_image_path, existing_phone = row
         try:
-            result = DeepFace.verify(img1_path=photo_path, img2_path=existing_image_path, model_name='VGG-Face', enforce_detection=False)
-            if result['verified']:
-                os.remove(photo_path)  # Remove the new image after detection
-                conn.close()
-                return jsonify({'status': 'info', 'message': f"Image found in the database. The phone number is {existing_phone}."}), 200
+            if face_model:
+                result = DeepFace.verify(img1_path=photo_path, img2_path=existing_image_path, model_name='Facenet', enforce_detection=False, model=face_model)
+                if result['verified']:
+                    os.remove(photo_path)  # Remove the new image after detection
+                    conn.close()
+                    return jsonify({'status': 'info', 'message': f"Image found in the database. The phone number is {existing_phone}."}), 200
         except Exception as e:
-            continue
+            continue  # Skip any errors during verification
 
     # Hash the password provided by the user
     hashed_password = generate_password_hash(password)
 
-    # Insert new user into the database
-    c.execute('INSERT INTO users (phone, password, name, dob, email, blood_group, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)',
-              (phone, hashed_password, name, dob, email, blood_group, photo_path))
-    conn.commit()
+    try:
+        # Insert new user into the database
+        c.execute('INSERT INTO users (phone, password, name, dob, email, blood_group, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                  (phone, hashed_password, name, dob, email, blood_group, photo_path))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        # Handle duplicate phone numbers
+        os.remove(photo_path)
+        conn.close()
+        return jsonify({'status': 'danger', 'message': 'Phone number already registered.'}), 400
+
     conn.close()
 
-    return jsonify({'status': 'success', 'message': f'Registration successful. You can now log in with your phone number and password.'}), 200
+    return jsonify({'status': 'success', 'message': 'Registration successful. You can now log in with your phone number and password.'}), 200
 
 # Login Route
 @app.route('/login', methods=['GET', 'POST'])
@@ -147,13 +179,16 @@ def dashboard():
 @login_required
 def logout():
     logout_user()
-    return "You have been logged out. <a href='/'>Go back</a>"
+    return render_template('logout.html')  # Create a logout.html for better UX
 
 # Main route for index page
 @app.route('/')
 def index():
     return render_template('index.html')
 
+# Secure filename function to prevent directory traversal attacks
+from werkzeug.utils import secure_filename
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))  # Get the PORT from the environment or default to 5000
-    app.run(host='0.0.0.0', port=port, debug=False)  # Host as '0.0.0.0' to allow external access
+    app.run(host='0.0.0.0', port=port, debug=False)

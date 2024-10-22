@@ -9,7 +9,7 @@ body {
 }
 
 .footer {
-    position: absolute;
+    position: fixed;
     bottom: 0;
     width: 100%;
     background-color: #343a40;
@@ -19,4 +19,19 @@ body {
 
 .footer a {
     color: #f8f9fa;
+    text-decoration: underline;
+}
+
+button {
+    font-size: 18px;
+}
+
+@media (max-width: 576px) {
+    .jumbotron {
+        padding: 20px;
+    }
+
+    button {
+        font-size: 16px;
+    }
 }
